@@ -1,54 +1,103 @@
-#!/bin/bash
+################################################################################
+#                        NWP & DATA ASSIMILATION 
+# Written by Phinous for the IMSA Data Assimilation and NWP Training 
+################################################################################  
+### Go to wps and clean the environment
 
-# ==============================================================================
-# GFS DOWNLOADER (OPTIMIZED)
-# ==============================================================================
+#To downlad the data
 
-# 1. CONFIGURATION
-# ----------------
-# Where to save the data?
-BASE_DIR="/home/rmdmk/Training/gfs"
+./data_imsa.sh
 
-# DATE SETTING:
-# Option A: Use System Date (Only works if your PC clock is correct!)
-# THE_DATE=$(date -d "yesterday" +"%Y%m%d")
+cd /home/nwp/IMSA01/Build_WRF/NWP/WPS
 
-# Option B: Manual Date (SAFER - Use this if your PC clock says 2025)
-# Set this to a date within the last 7 days (e.g., yesterday in real life)
-THE_DATE="20251211"  # <--- CHANGE THIS TO THE REAL DATE YOU WANT
+rm -f geo_em.d0* GRIBFILE.A* FILE* met_em.d0*
 
-# Cycle (00z, 06z, 12z, 18z)
-CYCLE="00"
+#Running geogrid to process IBCs
 
-# Create the folder
-WORK_DIR="$BASE_DIR/$THE_DATE"
-mkdir -p $WORK_DIR
-cd $WORK_DIR || exit 1
+#Process data from WPS_GEOG
 
-echo "Downloading GFS data for Date: $THE_DATE (Cycle: $CYCLE)"
-echo "Saving to: $WORK_DIR"
+./geogrid.exe
 
-# 2. DOWNLOAD LOOP
-# ----------------
-# This loops from hour 000 to 123 in steps of 3 (000, 003, 006...)
-for HR in $(seq -f "%03g" 0 3 123); do
+#Be sure to clear previous files 
 
-    FILE_NAME="gfs.t${CYCLE}z.pgrb2.0p25.f${HR}"
+rm -f GRIBFILE.A* FILE* met_em.d0*
+
+#Linking GFS IBCs from NOAA 
+
+./link_grib.csh /home/nwp/IMSA01/Build_WRF/NWP/DATA/gfs*
+
+#Convert the files from grib to intermediate formats.. 
+
+./ungrib.exe
+
+#cp geogrid/GEOGRID.TBL ./
+#cp metgrid/METGRID.TBL ./
+#Copy vTABLES:
+#cp ungrib/Variable_Tables/Vtable.GFS .
+#Then rename the file
+#mv Vtable.GFS Vtable
+
+ll -lht
+
+cd /home/nwp/IMSA01/NWP/WPS/
+
+./metgrid.exe
+
+###############################################################
+
+cd /home/nwp/IMSA01/NWP/WRF/run
+
+rm -f wrfout_d0* wrfbdy_d01 wrfinput_d0* met_em*
+
+ln -sf /home/nwp/IMSA01/NWP/WPS/met_em* ./
+
+ gnome-terminal -- bash -c "tail -f rsl.out.0000; exec bash"
+
+        mpirun -np 8 ./real.exe
+        
+        mpirun -np 8 ./wrf.exe
+        
+################################################################################
+#                        DATA ASSIMILATION 
+################################################################################      
+        
     
-    echo "Downloading forecast hour: $HR ..."
+###########################################################################################
 
-    # NOAA NOMADS URL (Sub-region download)
-    # Note: I kept your lat/lon box (Africa/Middle East region?)
-    curl -s "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?file=${FILE_NAME}&subregion=&leftlon=22&rightlon=45&toplat=10&bottomlat=-8&dir=%2Fgfs.${THE_DATE}%2F${CYCLE}%2Fatmos" -o ${FILE_NAME}
+#PROCESSING THE OBSERVATIONS TO Littler format
 
-    # Check if download worked (NOMADS returns a small HTML file if 404 error)
-    FILESIZE=$(stat -c%s "$FILE_NAME")
-    if [ "$FILESIZE" -lt 10000 ]; then
-        echo "  [WARNING] File $FILE_NAME is too small ($FILESIZE bytes). The date/time might be wrong or data not available yet."
-        # Optional: cat $FILE_NAME to see the error message
-    fi
+###########################################################################################
 
-done
+cd /home/nwp/IMSA01/NWP/DVAR/LITTLER/out/
+rm -rf *
 
-echo "Download process finished."
-echo "Check your files in: $WORK_DIR"
+cd /home/nwp/IMSA01/NWP/DVAR/LITTLER/
+rm -rf 2021*
+
+./ogmet_00data.sh
+./ogmet_00perl.pl
+
+f95 00Obs2Littler.f90 -o littler
+littler
+
+###############################################################################
+    
+  
+    
+
+USEFUL SCRIPTS
+
+  sudo apt-get install firefox gedit 
+  https://gdex.ucar.edu/datasets/d337000/dataaccess/
+  
+#Copy from my computer to remote computer
+  rsync -zaP /home/yyy/pp.sh nwp@172.16.52.48:/home/nwp/IMSA/phinous/model/
+   
+# PREPBUFR
+#        https://rda.ucar.edu/datasets/ds337.0/dataaccess/     
+        
+        
+        
+        
+        
+exit
