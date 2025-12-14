@@ -1,60 +1,42 @@
 #!/bin/bash
 
 # ==============================================================================
-#  GFS REGIONAL DOWNLOADER (UNIVERSAL PATHS)
+#  GFS REGIONAL DOWNLOADER 
 # ==============================================================================
 
+# 1. CONFIGURATION
 # ------------------------------------------------------------------------------
-# 1. CONFIGURATION (EDIT THIS SECTION)
-# ------------------------------------------------------------------------------
 
-# --- WHERE TO SAVE? ---
-# "$HOME" automatically detects your home folder (e.g., /home/rmdmk)
-# The script will create 'Training/gfs' inside your home folder.
-TARGET_ROOT_DIR="$HOME/Training/gfs"
+# Updated path to match your working directory
+TARGET_ROOT_DIR="$HOME/Build_WRF/NWP/gfs"
 
-# --- DATE & CYCLE ---
-# Option A: Automatic (Yesterday)
-# DATE_STR=$(date -d "yesterday" +"%Y%m%d")
-
-# Option B: Manual (Specific Date)
-DATE_STR="20251211"
+# --- DATE ---
+# If you want a different date, change it here.
+DATE_STR="20251212"
 CYCLE="00"
 
 # --- REGION BOUNDARIES ---
-# Define the box to download (East Africa Example)
-LEFT_LON="15"
-RIGHT_LON="58"
-TOP_LAT="20"
-BOTTOM_LAT="-15"
+# Make sure that the WRF domain fits inside.
+LEFT_LON="50"       # Expanded West
+RIGHT_LON="110"     # Expanded East
+TOP_LAT="50"        # Expanded North
+BOTTOM_LAT="-10"    # Expanded South
 
 # ------------------------------------------------------------------------------
-# 2. DIRECTORY CREATION LOGIC
+# 2. DIRECTORY SETUP
 # ------------------------------------------------------------------------------
 
-# Define the full path: /home/user/Training/gfs/20251211/00z
 FINAL_DIR="${TARGET_ROOT_DIR}/${DATE_STR}/${CYCLE}z"
 
 echo "--------------------------------------------------------"
-echo "Checking directory status..."
 echo "Target Path: $FINAL_DIR"
-
-if [ ! -d "$FINAL_DIR" ]; then
-    echo "Directory not found."
-    echo "Creating directory structure..."
-    # mkdir -p creates all necessary parent folders automatically
-    mkdir -p "$FINAL_DIR"
-else
-    echo "Directory exists."
-fi
-
-# Enter the directory
+mkdir -p "$FINAL_DIR"
 cd "$FINAL_DIR" || { echo "ERROR: Could not enter $FINAL_DIR"; exit 1; }
 
 echo "--------------------------------------------------------"
-echo "Starting Download Routine"
+echo "Starting Download: Expanded India Domain"
 echo "Date:   $DATE_STR ($CYCLE z)"
-echo "Region: Lon ${LEFT_LON}to${RIGHT_LON} / Lat ${BOTTOM_LAT}to${TOP_LAT}"
+echo "Bounds: Lon ${LEFT_LON} to ${RIGHT_LON} / Lat ${BOTTOM_LAT} to ${TOP_LAT}"
 echo "--------------------------------------------------------"
 
 # ------------------------------------------------------------------------------
@@ -65,19 +47,31 @@ for HR in $(seq -f "%03g" 0 3 123); do
 
     FILE="gfs.t${CYCLE}z.pgrb2.0p25.f${HR}"
     
-    # URL construction
     URL="https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?file=${FILE}&subregion=&leftlon=${LEFT_LON}&rightlon=${RIGHT_LON}&toplat=${TOP_LAT}&bottomlat=${BOTTOM_LAT}&dir=%2Fgfs.${DATE_STR}%2F${CYCLE}%2Fatmos"
 
     echo "Downloading: $FILE ..."
 
-    curl -s -S "$URL" -o "$FILE"
+    # --- FIX 1: CONNECTION STABILITY ---
+    # --retry 3 : Try 3 times if NOAA kicks you off
+    # --connect-timeout 30 : Don't freeze if internet is bad
+    curl -f --retry 3 --retry-delay 5 --connect-timeout 30 -s -S "$URL" -o "$FILE"
 
     # Check file size
-    FILESIZE=$(stat -c%s "$FILE")
-    if [ "$FILESIZE" -lt 10000 ]; then
-        echo "  [WARNING] File too small ($FILESIZE bytes). Data likely unavailable."
-        rm "$FILE"
+    if [ -f "$FILE" ]; then
+        FILESIZE=$(stat -c%s "$FILE")
+        if [ "$FILESIZE" -lt 10000 ]; then
+            echo "  [WARNING] File too small ($FILESIZE bytes). Removing."
+            rm "$FILE"
+        else
+            echo "  [SUCCESS] Saved."
+        fi
+    else
+        echo "  [ERROR] Download failed."
     fi
+
+    # --- FIX 2: PREVENT SERVER BLOCKING ---
+    # Pause for 10 seconds so NOAA doesn't block your IP
+    sleep 10
 
 done
 
